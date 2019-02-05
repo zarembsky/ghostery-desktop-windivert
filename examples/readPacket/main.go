@@ -120,14 +120,13 @@ func GenerateFilterString(exemptLocalhost bool) string {
 }
 
 func main() {
-	fmt.Println("HERE 1")
 	tcpHelper, err := godivert.NewTCPHelper()
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println("HERE 2")
+
 	defer tcpHelper.Close()
-	ProxyPort := uint16(8080)
+	ProxyPort := uint16(4443)
 	//AltProxyPort := uint16(4443)
 	//ProxyIP := net.ParseIP("127.0.0.1")
 	var PortsArray [65536]uint16
@@ -138,20 +137,20 @@ func main() {
 	//filter := GenerateFilterString(false)
 	//fmt.Println(filter)
 
-	filter := "tcp and ip and outbound and !loopback and !impostor and (tcp.DstPort == 80 || tcp.SrcPort == 8080)"
+	filter := "tcp and ip and outbound and !loopback and !impostor and (tcp.DstPort == 443 or tcp.SrcPort == 4443)"
 	//filter := "tcp and outbound and !loopback and !impostor and (tcp.DstPort == 443 or tcp.SrcPort == 4443)"
 	winDivert, err := godivert.NewWinDivertHandle(filter, -1000, 0)
 	if err != nil {
 		panic(err)
 	}
-	// udpDropFilter := "outbound and udp and (udp.DstPort == 80 || udp.DstPort == 443)"
-	// winDivertDropUDP, err2 := godivert.NewWinDivertHandle(udpDropFilter, -999, 2)
-	// if err2 != nil {
-	// 	panic(err2)
-	// }
+	udpDropFilter := "outbound and udp and (udp.DstPort == 80 || udp.DstPort == 443)"
+	winDivertDropUDP, err2 := godivert.NewWinDivertHandle(udpDropFilter, -999, 2)
+	if err2 != nil {
+		panic(err2)
+	}
 
 	defer winDivert.Close()
-	//defer winDivertDropUDP.Close()
+	defer winDivertDropUDP.Close()
 	for {
 		packet, err1 := winDivert.Recv()
 		if err1 != nil {
@@ -179,10 +178,11 @@ func main() {
 
 			//fmt.Println("PID:", pid, srcPort)
 
-			if pid == 1264 /*os.Getpid()*/ {
+			if pid == 5684 /*os.Getpid()*/ {
 				v4ShouldFilter[srcPort] = 0
-				fmt.Println("IT IS OUR PID", pid)
+				//fmt.Println("IT IS OUR PID DONT FILTER", srcPort, pid)
 			} else {
+				//fmt.Println("FILTER", srcPort, pid)
 				v4ShouldFilter[srcPort] = 1
 			}
 		}
@@ -204,28 +204,26 @@ func main() {
 		// 	packet.Send(winDivert)
 		// 	continue
 		// }
-
 		if packet.Direction() == false {
-			if srcPort == ProxyPort {
-				fmt.Println("FROM PROXY:************", srcPort, dstPort, srcIP, dstIP, PortsArray[dstPort])
+			if srcPort == ProxyPort  {
+				//fmt.Printf("FROM PROXY SRC %s:%d DST %s:%d:%d\n", srcIP, srcPort, dstIP, dstPort, PortsArray[dstPort])
 				packet.SetSrcPort(PortsArray[dstPort])
 				packet.Addr.SetDirection(true)
 				packet.SetDstIP(srcIP)
 				packet.SetSrcIP(dstIP)
 				packet.CalcNewChecksum(winDivert)
-				packet.Send(winDivert)
 				//fmt.Println("WIND DIVERT ADDRESS", packet.Addr)
 			} else {
+				//fmt.Printf("NOT FROM PROXY SRC %s:%d DST %s:%d\n", srcIP, srcPort, dstIP, dstPort)
+				PortsArray[srcPort] = dstPort
 				// Reflect: PORT ---> PROXY
 				if v4ShouldFilter[srcPort] > 0 {
-					fmt.Println("TO PROXY:************", srcPort, dstPort, srcIP, dstIP)
+					//fmt.Printf("NOT FROM PROXY REFLECTED SRC %s:%d DST %s:%d\n", srcIP, srcPort, dstIP, dstPort)
 					packet.SetDstPort(ProxyPort)
-					PortsArray[srcPort] = dstPort
 					packet.SetDstIP(srcIP)
 					packet.SetSrcIP(dstIP)
 					packet.Addr.SetDirection(true)
 					packet.CalcNewChecksum(winDivert)
-					packet.Send(winDivert)
 				}
 			}
 		}
