@@ -29,6 +29,7 @@ type ProtocolHeader interface {
 	SetSrcPort(uint16) error
 	SetDstPort(uint16) error
 	NeedNewChecksum() bool
+	SYN() bool
 }
 
 // Returns the name of the given protocol number

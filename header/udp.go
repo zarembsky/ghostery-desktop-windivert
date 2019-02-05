@@ -81,3 +81,8 @@ func (h *UDPHeader) Checksum() uint16 {
 func (h *UDPHeader) NeedNewChecksum() bool {
 	return h.Modified
 }
+
+// Returns true if the header has been modified
+func (h *UDPHeader) SYN() bool {
+	return false
+}

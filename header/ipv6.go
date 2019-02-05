@@ -109,3 +109,8 @@ func (h *IPv6Header) Checksum() (uint16, error) {
 func (h *IPv6Header) NeedNewChecksum() bool {
 	return false
 }
+
+// Returns false always
+func (h *IPv6Header) SYN() bool {
+	return false
+}

@@ -2,8 +2,9 @@ package godivert
 
 import (
 	"fmt"
-	"github.com/williamfhe/godivert/header"
 	"net"
+
+	"header"
 )
 
 // Represents a packet
@@ -137,7 +138,7 @@ func (p *Packet) SetSrcPort(port uint16) error {
 
 }
 
-// Returns the destination port of the packet
+// DstPort returns the destination port of the packet
 // Shortcut for NextHeader.DstPort()
 func (p *Packet) DstPort() (uint16, error) {
 	p.VerifyParsed()
@@ -149,7 +150,7 @@ func (p *Packet) DstPort() (uint16, error) {
 	return p.NextHeader.DstPort()
 }
 
-// Sets the destination port of the packet
+// SetDstPort sets the destination port of the packet
 // Shortcut for NextHeader.SetDstPort()
 func (p *Packet) SetDstPort(port uint16) error {
 	p.VerifyParsed()
@@ -159,6 +160,18 @@ func (p *Packet) SetDstPort(port uint16) error {
 	}
 
 	return p.NextHeader.SetDstPort(port)
+}
+
+// Returns the destination port of the packet
+// Shortcut for NextHeader.DstPort()
+func (p *Packet) Syn() bool {
+	p.VerifyParsed()
+
+	if p.NextHeader == nil {
+		return false
+	}
+
+	return p.NextHeader.SYN()
 }
 
 // Returns the name of the protocol

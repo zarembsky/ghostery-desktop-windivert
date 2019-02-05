@@ -130,3 +130,8 @@ func (h *IPv4Header) SetDstIP(ip net.IP) {
 func (h *IPv4Header) NeedNewChecksum() bool {
 	return h.Modified
 }
+
+// Returns false always
+func (h *IPv4Header) SYN() bool {
+	return false
+}

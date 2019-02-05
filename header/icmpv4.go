@@ -104,3 +104,8 @@ func (h *ICMPv4Header) SetDstPort(port uint16) error {
 func (h *ICMPv4Header) NeedNewChecksum() bool {
 	return h.Modified
 }
+
+// Returns false always
+func (h *ICMPv4Header) SYN() bool {
+	return false
+}
