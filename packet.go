@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net"
 
-	"header"
+	"godivert/header"
 )
 
 // Represents a packet

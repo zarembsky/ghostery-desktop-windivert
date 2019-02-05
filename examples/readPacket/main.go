@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/williamfhe/godivert"
+	"godivert"
 )
 
 var privateIPBlocks []*net.IPNet
@@ -120,10 +120,12 @@ func GenerateFilterString(exemptLocalhost bool) string {
 }
 
 func main() {
+	fmt.Println("HERE 1")
 	tcpHelper, err := godivert.NewTCPHelper()
 	if err != nil {
 		panic(err)
 	}
+	fmt.Println("HERE 2")
 	defer tcpHelper.Close()
 	ProxyPort := uint16(8080)
 	//AltProxyPort := uint16(4443)
