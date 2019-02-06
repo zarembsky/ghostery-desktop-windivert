@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"net"
 
 	"godivert"
@@ -100,85 +101,70 @@ func GenerateFilterString(exemptLocalhost bool) string {
 		51515, // MOM-Clear
 	}
 
-	var filter string
+	var filterTail string
 	for _, port := range exemptedPorts {
-		filter += (" and tcp.DstPort != " + fmt.Sprint(port))
+		filterTail += (" and tcp.DstPort != " + fmt.Sprint(port))
 	}
 
-	switch exemptLocalhost {
-	case true:
-		{
-			filter = ("outbound and tcp and tcp.SrcPort == 8080 and tcp.DstPort == 80 and ((ip and ip.SrcAddr != 127.0.0.1) or (ipv6 and ipv6.SrcAddr != ::1))" + filter)
-		}
-	case false:
-		{
-			filter = ("outbound and tcp and (tcp.SrcPort == 8080 or tcp.DstPort == 80 or tcp.DstPort == 443) and tcp.DstPort != 4443 and tcp.SrcPort != 4443" + filter)
-		}
-	}
+	// var (
+	// 	filterHTTP, 
+	// 	filterHTTPS
+	//  ) string
 
-	return filter
+	// switch exemptLocalhost {
+	// case true:
+	// 	{
+	// 		filter = ("outbound and tcp and tcp.SrcPort == 8080 and tcp.DstPort == 80 and ((ip and ip.SrcAddr != 127.0.0.1) or (ipv6 and ipv6.SrcAddr != ::1))" + filter)
+	// 	}
+	// case false:
+	// 	{
+	// 		filterHTTP = "tcp and ip and outbound and !loopback and !impostor and (tcp.DstPort == 80 or tcp.SrcPort == 8080)" + filter
+	// 		filterHTTPS := "tcp and ip and outbound and !loopback and !impostor and (tcp.DstPort == 443 or tcp.SrcPort == 4443)" + filter
+	// 	}
+	// }
+
+	return filterTail
 }
 
-func main() {
-	tcpHelper, err := godivert.NewTCPHelper()
-	if err != nil {
-		panic(err)
-	}
-
-	defer tcpHelper.Close()
-	ProxyPort := uint16(4443)
-	//AltProxyPort := uint16(4443)
-	//ProxyIP := net.ParseIP("127.0.0.1")
-	var PortsArray [65536]uint16
+func DivertTraffic(port uint16, proxyPort uint16, proxyPid int, filterTail string, tcpHelper *godivert.TCPHelper, done chan string) {
+	var portsArray [65536]uint16
 	var v4ShouldFilter [65536]uint16
 
-	//HTTPPort := uint16(80)
-	// HTTPSPort := uint16(443)
-	//filter := GenerateFilterString(false)
-	//fmt.Println(filter)
-
-	filter := "tcp and ip and outbound and !loopback and !impostor and (tcp.DstPort == 443 or tcp.SrcPort == 4443)"
-	//filter := "tcp and outbound and !loopback and !impostor and (tcp.DstPort == 443 or tcp.SrcPort == 4443)"
+	filter := fmt.Sprintf("tcp and ip and outbound and !loopback and !impostor and (tcp.DstPort == %d or tcp.SrcPort == %d)", port, proxyPort) + filterTail;
+	fmt.Println("FILTER", filter)
 	winDivert, err := godivert.NewWinDivertHandle(filter, -1000, 0)
-	if err != nil {
-		panic(err)
-	}
-	udpDropFilter := "outbound and udp and (udp.DstPort == 80 || udp.DstPort == 443)"
-	winDivertDropUDP, err2 := godivert.NewWinDivertHandle(udpDropFilter, -999, 2)
-	if err2 != nil {
-		panic(err2)
-	}
-
 	defer winDivert.Close()
-	defer winDivertDropUDP.Close()
+	if err != nil {
+		done <- "Failed to open WinDivert handle. Are you running in non-admin mode?"
+		return
+	}
 	for {
-		packet, err1 := winDivert.Recv()
-		if err1 != nil {
-			panic(err1)
+		packet, err := winDivert.Recv()
+		if err != nil {
+			log.Printf("Failed to receive packet. Continue")
+			continue
 		}
-		packet.VerifyParsed()
-		ipVersion := packet.IpVersion()
-
-		//		fmt.Println("PACKET", packet)
 
 		srcPort, err1 := packet.SrcPort()
 		if err1 != nil {
+			log.Printf("Failed to get source port for packet. Continue")
 			packet.Send(winDivert)
 			continue
 		}
 
 		srcIP := packet.SrcIP()
 		if packet.Syn() != false {
-			//fmt.Println("PACKET", packet.Syn())
+			packet.VerifyParsed()
+			ipVersion := packet.IpVersion()
 
 			pid, err := tcpHelper.GetConnectionPID(int(srcPort), srcIP.String(), ipVersion)
 			if err != nil {
-				panic(err)
+				log.Printf("Failed to get process id for packet. Continue")
+				packet.Send(winDivert)
+				continue
 			}
 
-			//fmt.Println("PID:", pid, srcPort)
-
-			if pid == 5684 /*os.Getpid()*/ {
+			if pid == proxyPid /*os.Getpid()*/ {
 				v4ShouldFilter[srcPort] = 0
 				//fmt.Println("IT IS OUR PID DONT FILTER", srcPort, pid)
 			} else {
@@ -187,8 +173,9 @@ func main() {
 			}
 		}
 
-		dstPort, err0 := packet.DstPort()
-		if err0 != nil {
+		dstPort, err2 := packet.DstPort()
+		if err2 != nil {
+			log.Printf("Failed to get destination port for packet. Continue")
 			packet.Send(winDivert)
 			continue
 		}
@@ -205,9 +192,9 @@ func main() {
 		// 	continue
 		// }
 		if packet.Direction() == false {
-			if srcPort == ProxyPort  {
+			if srcPort == proxyPort  {
 				//fmt.Printf("FROM PROXY SRC %s:%d DST %s:%d:%d\n", srcIP, srcPort, dstIP, dstPort, PortsArray[dstPort])
-				packet.SetSrcPort(PortsArray[dstPort])
+				packet.SetSrcPort(portsArray[dstPort])
 				packet.Addr.SetDirection(true)
 				packet.SetDstIP(srcIP)
 				packet.SetSrcIP(dstIP)
@@ -215,11 +202,11 @@ func main() {
 				//fmt.Println("WIND DIVERT ADDRESS", packet.Addr)
 			} else {
 				//fmt.Printf("NOT FROM PROXY SRC %s:%d DST %s:%d\n", srcIP, srcPort, dstIP, dstPort)
-				PortsArray[srcPort] = dstPort
+				portsArray[srcPort] = dstPort
 				// Reflect: PORT ---> PROXY
 				if v4ShouldFilter[srcPort] > 0 {
 					//fmt.Printf("NOT FROM PROXY REFLECTED SRC %s:%d DST %s:%d\n", srcIP, srcPort, dstIP, dstPort)
-					packet.SetDstPort(ProxyPort)
+					packet.SetDstPort(proxyPort)
 					packet.SetDstIP(srcIP)
 					packet.SetSrcIP(dstIP)
 					packet.Addr.SetDirection(true)
@@ -229,4 +216,31 @@ func main() {
 		}
 		packet.Send(winDivert)
 	}
+}
+func main() {
+	tcpHelper, err := godivert.NewTCPHelper()
+	if err != nil {
+		panic(err)
+	}
+
+	defer tcpHelper.Close()
+
+	udpDropFilter := "outbound and udp and (udp.DstPort == 80 || udp.DstPort == 443)"
+	winDivertDropUDP, err2 := godivert.NewWinDivertHandle(udpDropFilter, -999, 2)
+	defer winDivertDropUDP.Close()
+	if err2 != nil {
+		panic(err2)
+	}
+	filterTail := GenerateFilterString(false)
+
+	proxyPid := int(9992)
+
+	doneHTTPS := make(chan string, 1)
+	doneHTTP := make(chan string, 1)
+
+	go DivertTraffic(443, 4443, proxyPid, filterTail, tcpHelper, doneHTTPS)
+	go DivertTraffic(80, 8080, proxyPid, filterTail, tcpHelper, doneHTTP)
+
+	log.Printf("\nHTTPS Routine exits with message \"%s\"", <-doneHTTPS)
+	log.Printf("\nHTTP Routine exits with message \"%s\"", <-doneHTTP)
 }
