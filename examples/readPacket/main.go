@@ -126,7 +126,7 @@ func GenerateFilterString(exemptLocalhost bool) string {
 	return filterTail
 }
 
-func DivertTraffic(port uint16, proxyPort uint16, proxyPid int, filterTail string, tcpHelper *godivert.TCPHelper, done chan string) {
+func DivertTraffic(port uint16, proxyPort uint16, filterTail string, tcpHelper *godivert.TCPHelper, done chan string) {
 	var portsArray [65536]uint16
 	var v4ShouldFilter [65536]uint16
 
@@ -138,6 +138,8 @@ func DivertTraffic(port uint16, proxyPort uint16, proxyPid int, filterTail strin
 		done <- "Failed to open WinDivert handle. Are you running in non-admin mode?"
 		return
 	}
+	gotProxyResponse := false;
+	proxyPid := int(0)
 	for {
 		packet, err := winDivert.Recv()
 		if err != nil {
@@ -164,11 +166,18 @@ func DivertTraffic(port uint16, proxyPort uint16, proxyPid int, filterTail strin
 				continue
 			}
 
+			if gotProxyResponse == false && srcPort == proxyPort && pid != 0 {
+				proxyPid = pid
+				gotProxyResponse = true
+			}
+
 			if pid == proxyPid /*os.Getpid()*/ {
 				v4ShouldFilter[srcPort] = 0
-				//fmt.Println("IT IS OUR PID DONT FILTER", srcPort, pid)
+				//fmt.Println("IT IS OUR PID DONT FILTER", srcPort)
 			} else {
-				//fmt.Println("FILTER", srcPort, pid)
+				// if srcPort == proxyPort {
+				// 	fmt.Println("FILTER", srcPort, pid)
+				// }
 				v4ShouldFilter[srcPort] = 1
 			}
 		}
@@ -198,19 +207,20 @@ func DivertTraffic(port uint16, proxyPort uint16, proxyPid int, filterTail strin
 				packet.Addr.SetDirection(true)
 				packet.SetDstIP(srcIP)
 				packet.SetSrcIP(dstIP)
-				packet.CalcNewChecksum(winDivert)
+//				packet.CalcNewChecksum(winDivert)
 				//fmt.Println("WIND DIVERT ADDRESS", packet.Addr)
 			} else {
 				//fmt.Printf("NOT FROM PROXY SRC %s:%d DST %s:%d\n", srcIP, srcPort, dstIP, dstPort)
-				portsArray[srcPort] = dstPort
+				//portsArray[srcPort] = dstPort
 				// Reflect: PORT ---> PROXY
 				if v4ShouldFilter[srcPort] > 0 {
 					//fmt.Printf("NOT FROM PROXY REFLECTED SRC %s:%d DST %s:%d\n", srcIP, srcPort, dstIP, dstPort)
+					portsArray[srcPort] = dstPort
 					packet.SetDstPort(proxyPort)
 					packet.SetDstIP(srcIP)
 					packet.SetSrcIP(dstIP)
 					packet.Addr.SetDirection(true)
-					packet.CalcNewChecksum(winDivert)
+//					packet.CalcNewChecksum(winDivert)
 				}
 			}
 		}
@@ -233,13 +243,11 @@ func main() {
 	}
 	filterTail := GenerateFilterString(false)
 
-	proxyPid := int(9992)
-
 	doneHTTPS := make(chan string, 1)
 	doneHTTP := make(chan string, 1)
 
-	go DivertTraffic(443, 4443, proxyPid, filterTail, tcpHelper, doneHTTPS)
-	go DivertTraffic(80, 8080, proxyPid, filterTail, tcpHelper, doneHTTP)
+	go DivertTraffic(443, 4443, filterTail, tcpHelper, doneHTTPS)
+	go DivertTraffic(80, 8080, filterTail, tcpHelper, doneHTTP)
 
 	log.Printf("\nHTTPS Routine exits with message \"%s\"", <-doneHTTPS)
 	log.Printf("\nHTTP Routine exits with message \"%s\"", <-doneHTTP)
