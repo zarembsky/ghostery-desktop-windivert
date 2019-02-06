@@ -179,6 +179,12 @@ func DivertTraffic(port uint16, proxyPort uint16, filterTail string, tcpHelper *
 				// 	fmt.Println("FILTER", srcPort, pid)
 				// }
 				v4ShouldFilter[srcPort] = 1
+				processName, err := tcpHelper.GetProcessName(pid)
+				if err != nil {
+					fmt.Println(err)
+				} else {
+					fmt.Println(processName)
+				}
 			}
 		}
 
