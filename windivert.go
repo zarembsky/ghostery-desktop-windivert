@@ -2,7 +2,6 @@ package godivert
 
 import (
 	"errors"
-	"fmt"
 	"runtime"
 	"syscall"
 	"unsafe"
@@ -21,7 +20,6 @@ var (
 )
 
 func init() {
-	fmt.Println("INIT CALLED")
 	LoadDLL("WinDivert.dll", "WinDivert.dll")
 }
 
