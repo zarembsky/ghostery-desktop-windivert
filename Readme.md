@@ -1,4 +1,4 @@
-**Godivert**
+**Godivert for Ghostery Desktop Proxy**
 
 Forked from [https://github.com/williamfhe/godivert](https://github.com/williamfhe/godivert) with some changes made as needed.
 
