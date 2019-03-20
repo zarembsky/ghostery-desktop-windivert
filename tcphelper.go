@@ -57,6 +57,10 @@ func (th *TCPHelper) GetProcessName(pid int) (string, error) {
 	if th.dllHandle == 0 || th.getConnectionPID == 0 || th.getProcessName == 0 {
 		return "", errors.New("TCPHelper is not initialized")
 	}
+
+	if pid == 0 {
+		return "", errors.New("Unable to find process name for a process with zero pid")
+	}
 	var nargs uintptr = 3
 	bufferSize := 261 //MAX_PATH in Windows is defined as 260 characters
 	var array [261]uint16
@@ -67,30 +71,3 @@ func (th *TCPHelper) GetProcessName(pid int) (string, error) {
 	}
 	return syscall.UTF16ToString(buffer), nil
 }
-
-// func GetProcessName(pid int) string, error {
-// 	dllHandle, err := syscall.LoadLibrary("kernel32.dll")
-// 	if err != nil {
-// 		return nil, err
-// 	}
-
-//	StringBuilder buffer = new StringBuilder(1024);
-//	IntPtr hprocess = Kernel32.OpenProcess(Kernel32.ProcessAccessFlags.QueryLimitedInformation, false, (uint)processId);
-//	if (hprocess != IntPtr.Zero)
-//	{
-//		try
-//		{
-//			int size = buffer.Capacity;
-//			if (Kernel32.QueryFullProcessImageName(hprocess, 0, buffer, ref size))
-//			{
-//				return buffer.ToString();
-//			}
-//		}
-//		finally
-//		{
-//			Kernel32.CloseHandle(hprocess);
-//		}
-//	}
-//	return string.Empty;
-
-//}

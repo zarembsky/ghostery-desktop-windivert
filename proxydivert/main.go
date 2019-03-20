@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
+	"strconv"
 
 	"godivert"
 )
@@ -12,7 +14,9 @@ var privateIPBlocks []*net.IPNet
 
 func init() {
 	for _, cidr := range []string{
-		"127.0.0.0/8",    // IPv4 loopback
+		"127.0.0.0/8", // IPv4 loopback
+		// Three following blocks of IP addresses are reserved by the
+		// Internet Assigned Numbers Authority (IANA) for private Internets:
 		"10.0.0.0/8",     // RFC1918
 		"172.16.0.0/12",  // RFC1918
 		"192.168.0.0/16", // RFC1918
@@ -175,15 +179,17 @@ func DivertTraffic(port uint16, proxyPort uint16, filterTail string, tcpHelper *
 
 			if pid == -1 {
 				fmt.Println("PACKET", ipVersion, packet)
+				packet.Send(winDivert)
+				continue
 			}
 
-			if gotProxyResponse == false && srcPort == proxyPort && pid != 0 {
+			if gotProxyResponse == false && srcPort == proxyPort && pid != 0 && pid != os.Getpid() {
 				proxyPid = pid
 				gotProxyResponse = true
 				log.Printf("\nFound proxy listening to port %d\n", proxyPort)
 			}
 
-			if pid == proxyPid /*os.Getpid()*/ {
+			if pid == proxyPid {
 				//fmt.Println("IT IS OUR PID DONT FILTER", ipVersion, srcPort)
 				switch ipVersion {
 				case 4:
@@ -281,7 +287,40 @@ func DivertTraffic(port uint16, proxyPort uint16, filterTail string, tcpHelper *
 	}
 }
 func main() {
-	log.Println("Proxy Divert Started\n")
+	var proxyProcessId = 0
+	var err error
+	if len(os.Args) > 1 {
+		proxyProcessId, err = strconv.Atoi(os.Args[1])
+		if err != nil {
+			panic(err)
+		} else {
+			fmt.Println(proxyProcessId)
+		}
+	}
+
+	var proxyHttpPort = uint16(8080)
+	var proxyHttpsPort = uint16(4443)
+	var port int
+
+	if len(os.Args) > 3 {
+		port, err = strconv.Atoi(os.Args[2])
+		if err != nil {
+			panic(err)
+		} else {
+			proxyHttpPort = uint16(port)
+		}
+		port, err = strconv.Atoi(os.Args[3])
+		if err != nil {
+			panic(err)
+		} else {
+			proxyHttpsPort = uint16(port)
+		}
+	}
+
+	const httpPort = uint16(80)
+	const httpsPort = uint16(443)
+
+	log.Println("Proxy Divert Started")
 	tcpHelper, err := godivert.NewTCPHelper()
 	if err != nil {
 		panic(err)
@@ -300,8 +339,8 @@ func main() {
 	doneHTTPS := make(chan string, 1)
 	doneHTTP := make(chan string, 1)
 
-	go DivertTraffic(443, 4443, filterTail, tcpHelper, doneHTTPS)
-	go DivertTraffic(80, 8080, filterTail, tcpHelper, doneHTTP)
+	go DivertTraffic(httpsPort, proxyHttpsPort, filterTail, tcpHelper, doneHTTPS)
+	go DivertTraffic(httpPort, proxyHttpPort, filterTail, tcpHelper, doneHTTP)
 
 	log.Printf("\nHTTPS Routine exits with message \"%s\"", <-doneHTTPS)
 	log.Printf("\nHTTP Routine exits with message \"%s\"", <-doneHTTP)
