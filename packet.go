@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net"
 
-	"godivert/header"
+	"github.com/ghostery/ghostery-desktop-windivert/header"
 )
 
 // Represents a packet

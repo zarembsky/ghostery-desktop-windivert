@@ -7,7 +7,8 @@ import (
 	"os"
 	"strconv"
 
-	"godivert"
+	"github.com/BurntSushi/toml"
+	"github.com/ghostery/ghostery-desktop-windivert"
 )
 
 var privateIPBlocks []*net.IPNet
@@ -129,7 +130,7 @@ func GenerateFilterString(exemptLocalhost bool) string {
 
 	return filterTail
 }
-func DivertTraffic(port uint16, proxyPort uint16, filterTail string, tcpHelper *godivert.TCPHelper, done chan string) {
+func DivertTraffic(proxyProcessId int, port uint16, proxyPort uint16, filterTail string, tcpHelper *godivert.TCPHelper, done chan string) {
 	var v4ReturnPorts [65536]uint16
 	var v4ShouldFilter [65536]uint16
 
@@ -147,6 +148,10 @@ func DivertTraffic(port uint16, proxyPort uint16, filterTail string, tcpHelper *
 
 	gotProxyResponse := false
 	proxyPid := int(0)
+	if proxyProcessId > 0 {
+		proxyPid = proxyProcessId
+		gotProxyResponse = true
+	}
 	for {
 		packet, err := winDivert.Recv()
 		if err != nil {
@@ -287,33 +292,43 @@ func DivertTraffic(port uint16, proxyPort uint16, filterTail string, tcpHelper *
 	}
 }
 func main() {
-	var proxyProcessId = 0
-	var err error
-	if len(os.Args) > 1 {
-		proxyProcessId, err = strconv.Atoi(os.Args[1])
-		if err != nil {
-			panic(err)
-		} else {
-			fmt.Println(proxyProcessId)
-		}
-	}
-
+	var proxyProcessId int
 	var proxyHttpPort = uint16(8080)
 	var proxyHttpsPort = uint16(4443)
-	var port int
+	var host string
 
-	if len(os.Args) > 3 {
-		port, err = strconv.Atoi(os.Args[2])
-		if err != nil {
-			panic(err)
+	if len(os.Args) < 3 {
+		fmt.Println("Not enough arguments. Launching WinDivert with default values")
+		//	panic(errors.New("Not enough arguments to launch WinDivert"))
+	} else {
+		var err error
+		proxyProcessId, err = strconv.Atoi(os.Args[1])
+		if err != nil || proxyProcessId <= 0 {
+			fmt.Println("Missing proxy process id")
 		} else {
-			proxyHttpPort = uint16(port)
+			fmt.Println("Proxy process id:", proxyProcessId)
 		}
-		port, err = strconv.Atoi(os.Args[3])
+
+		path := os.Args[2]
+
+		type Config struct {
+			Port       uint16 `json:"port"`
+			PortSecure uint16 `json:"port_secure"`
+			Host       string `json:"host"`
+		}
+		config := Config{}
+
+		_, err = toml.DecodeFile(path, config)
 		if err != nil {
-			panic(err)
+			fmt.Println("Unable to decode config file")
 		} else {
-			proxyHttpsPort = uint16(port)
+			proxyHttpPort = config.Port
+			proxyHttpsPort = config.PortSecure
+			host = config.Host
+
+			if proxyHttpPort == 0 || proxyHttpsPort == 0 || host == "" {
+				fmt.Println("Incomplete config data")
+			}
 		}
 	}
 
@@ -339,8 +354,8 @@ func main() {
 	doneHTTPS := make(chan string, 1)
 	doneHTTP := make(chan string, 1)
 
-	go DivertTraffic(httpsPort, proxyHttpsPort, filterTail, tcpHelper, doneHTTPS)
-	go DivertTraffic(httpPort, proxyHttpPort, filterTail, tcpHelper, doneHTTP)
+	go DivertTraffic(proxyProcessId, httpsPort, proxyHttpsPort, filterTail, tcpHelper, doneHTTPS)
+	go DivertTraffic(proxyProcessId, httpPort, proxyHttpPort, filterTail, tcpHelper, doneHTTP)
 
 	log.Printf("\nHTTPS Routine exits with message \"%s\"", <-doneHTTPS)
 	log.Printf("\nHTTP Routine exits with message \"%s\"", <-doneHTTP)
